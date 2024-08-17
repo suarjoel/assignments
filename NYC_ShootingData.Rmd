@@ -1,0 +1,115 @@
+---
+title: "NYC Shooting Data and Analysis, Final Project 1"
+author: "J. Suarez"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## NYC Shooting Data
+
+```{r import_libraries, include=FALSE}
+library(tidyverse)
+library(lubridate)
+```
+
+```{r import_data}
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+data <- read_csv(url)
+```
+
+```{r tidy_data}
+data <- data %>% select(OCCUR_DATE, OCCUR_TIME, BORO, VIC_AGE_GROUP, VIC_SEX, VIC_RACE) %>% mutate(OCCUR_DATE = mdy(OCCUR_DATE)) %>% mutate(Month = month(OCCUR_DATE)) %>% mutate(Hour = substr(data$OCCUR_TIME, 1, 2))
+
+attach(data)
+data <- data[order(BORO, VIC_AGE_GROUP),]
+detach(data)
+
+```
+```{r summary}
+summary(data)
+data
+```
+#### Summary of Data
+Initially, the data on Shooting incidents in New York City included many variables such as the date and time of the incident, the borough and precinct, perpetrator demographic information, victim demographic information, and more. For my visualizations and analyses the data is condensed to include date and time, the borough, victim age, sex, and race, and an additional column holding an numerical representation of the month the incident occurred. For the purpose of my analyses, there was no apparent missing data. 
+
+#### Visualizations
+Below, are three plots showing the count of incidents by victim race, count of incidents per month, and count of incidents over time. 
+
+```{r visualize_shooting_per_boro}
+
+ggplot(data, aes(x = BORO)) + geom_bar() + labs(y = "Count", x = "Borough", title = "Count of Shootings per Borough")
+```
+
+```{r visualize_shooting_vic_race}
+ggplot(data, aes(x = VIC_RACE)) + geom_bar() + labs(y = "Count", x = "Race of Victim", title = "Count of Shootings by Victim Race") + theme(axis.text.x = element_text(angle = 90, hjust = .95, vjust = .2))
+
+```
+
+```{r visualize_shooting_over_time}
+#by month
+ggplot(data, aes(x = Month)) + geom_bar() + labs(y = "Count", x = "Month", title = "Count of Shootings per Month in NYC") + scale_x_continuous(breaks = c(1,2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12))
+
+#by hour
+ggplot(data, aes(x = Hour)) + geom_bar() + labs(y = "Count", x = "Time", title = "Count of Shootings per Hour in NYC")
+
+#all time by date
+dailyCounts <- data %>% group_by(OCCUR_DATE) %>% summarize(Count = n())
+
+dailyCounts
+
+ggplot(dailyCounts, aes(x = OCCUR_DATE, y = Count)) + geom_line(color = "blue") + labs(y = "Count", x = "Month/Year", title = "Count of Shootings over time in NYC") + scale_x_date(date_breaks = "3 month", date_labels = "%m-%Y", expand = c(0, 0)) + theme(axis.text.x = element_text(angle = 90, hjust = .95, vjust = .2, size = 6)) 
+```
+```{r analyses}
+boroughIncidents <- data %>% group_by(BORO) %>% summarize(Count = n())
+boroughIncidents
+
+vicRaceIncidents <- data %>% group_by(VIC_RACE) %>% summarize(Count = n())
+vicRaceIncidents
+```
+
+```{r predict_model}
+attach(data)
+data <- data[order(OCCUR_DATE, OCCUR_TIME),]
+detach(data)
+
+data <- data %>% mutate(DateTime = ymd_hms(paste(OCCUR_DATE, OCCUR_TIME))) %>% mutate(TimeToNext = as.numeric(difftime(lead(DateTime), DateTime, units = "hours")))
+
+data <- data %>% filter(!is.na(TimeToNext))
+
+data
+
+averageTimeToNextByHour <- data %>% group_by(Hour) %>% summarize(AverageTimeToNext = mean(TimeToNext))
+averageTimeToNextByHour
+
+
+mod <- lm(TimeToNext ~ Hour, data = data)
+summary(mod)
+
+mod2 <- lm(AverageTimeToNext ~ Hour, data = averageTimeToNextByHour)
+
+data <- data %>% mutate(pred = predict(mod))
+
+averageTimeToNextByHour <- averageTimeToNextByHour %>% mutate(pred = predict(mod2))
+
+averageTimeToNextByHour
+
+
+data %>% ggplot() + geom_point(aes(x = Hour, y = TimeToNext), color = "blue") + geom_point(aes(x = Hour, y = pred), color = "red") + theme(legend.position = "bottom") +  labs(title = str_c("Real and Predicted Time To Next By Hour"), y = "time in min")
+
+```
+
+
+#### Analyses and Conclusion
+After looking at the data visualizations, one notices that the borough of Brooklyn has the most reported incidents, with a count of 11,346, and Staten Island has the least reported incidents, with a count of 807, when compared to the other boroughs. When looking at the count of shooting by victim race, it appears that black individuals have the highest count of incidents (20,235) than any of the other races combined (all the other races have a combined total of 8,327). Looking at the count of shootings over time in NYC, one can notice a general trend of decreasing reports from 2006 to 2020 with a cyclical pattern within each year, as seen in the count of shooting per month graph. A large spike in incidents occurs in the summer of 2020, correlating to the COVID pandemic, with a slight return to prior trends in 2021. 
+
+Questions arise on what particularly about Brooklyn and Staten island may cause for the large difference in incident reports, along with why do black individuals have the 3 times the amount of incidents as the other races do combined. There may be socioeconomic factors at play within these variables that may be contributing to the difference. In addition, was specifically about the COVID pandemic contributed to the increase in shooting incidents? Government restrictions, unemployment, resource scarcity, may all play a role but further analysis would be needed. 
+
+The model attempted to use the hour of day as a predictor for average time to next incident. As shown in the visualization, using hour of day as an indicator to predict for when the next incident will occur will lead to inaccurate results. There are many factors that can affect the predicted time to next incident such as month, weather, political issues, and unpredictable human behavior. More data would be needed to accurately predict the time to next incident. 
+
+There may be bias present in the data due to under-reporting, or even over-reporting, due to victims being afraid of coming forward, citizen/societal relationship with police, or other factors. There may also be personal bias in the way I interpreted and assumed the spike seen in 2020 was caused or related the COVID pandemic. There may be further conclusions I could draw, were I more familiar with the New York City area. 
